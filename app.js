@@ -20,7 +20,7 @@ async function pause(message = 'Take your time') {
   engine.fadeOut(.7);
   await new Promise(resolve => setTimeout(resolve, 750));
   elapsed += (context.currentTime - began); if (deadline) elapsed = Math.min(elapsed, deadline); playing = false;
-  await context.suspend(); busy = false; $('play').disabled = false; showState(message);
+  engine.mute(); await context.suspend(); busy = false; $('play').disabled = false; showState(message);
 }
 function scheduleTimer() { engine?.scheduleEnd(deadline ? Math.max(0, deadline - elapsed - (playing ? context.currentTime - began : 0)) : null); }
 function setDeadline() { const minutes = Number($('timer').value); deadline = minutes ? elapsed + minutes * 60 : 0; scheduleTimer(); }
@@ -40,7 +40,7 @@ $('play').addEventListener('click', async () => {
         }
       });
     } else { await context.resume(); engine.update('volume', settings.volume); }
-    engine.setMono($('mono').checked); began = context.currentTime; playing = true;
+    engine.unmute(); engine.setMono($('mono').checked); began = context.currentTime; playing = true;
     if (deadline && elapsed >= deadline) { elapsed = 0; setDeadline(); }
     scheduleTimer();
     showState($('mono').checked ? 'Listening in mono' : 'Sound in motion');
