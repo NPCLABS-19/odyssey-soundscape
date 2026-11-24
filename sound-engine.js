@@ -15,11 +15,11 @@ export function createSoundscape(ctx, values = defaults, seed = Date.now()) {
   const compressor = ctx.createDynamicsCompressor();
   compressor.threshold.value = -18; compressor.knee.value = 20; compressor.ratio.value = 5;
   compressor.attack.value = .015; compressor.release.value = .4;
-  const master = gain(0), tone = ctx.createBiquadFilter(); tone.type = 'lowpass';
+  const master = gain(0), sessionGate = gain(1), tone = ctx.createBiquadFilter(); tone.type = 'lowpass';
   tone.frequency.value = 6500 - settings.warmth * 48;
   const highpass = ctx.createBiquadFilter(); highpass.type = 'highpass'; highpass.frequency.value = 35;
   const analyser = ctx.createAnalyser(); analyser.fftSize = 256;
-  tone.connect(highpass).connect(compressor).connect(master).connect(analyser).connect(ctx.destination);
+  tone.connect(highpass).connect(compressor).connect(master).connect(sessionGate).connect(analyser).connect(ctx.destination);
 
   // A short, generated stereo room. Its two tails have different random sequences.
   const reverb = ctx.createConvolver(), impulse = ctx.createBuffer(2, ctx.sampleRate * 3.5, ctx.sampleRate);
@@ -99,7 +99,7 @@ export function createSoundscape(ctx, values = defaults, seed = Date.now()) {
   sources.forEach(source => source.start(now));
   master.gain.setTargetAtTime(settings.volume / 100 * .65, now, .8);
   return {
-    settings, analyser, master, sources, layers,
+    settings, analyser, master, sessionGate, sources, layers,
     update(key, value) {
       settings[key] = Number(value); const time = ctx.currentTime;
       if (key === 'volume') master.gain.setTargetAtTime(value / 100 * .65, time, .12);
@@ -114,6 +114,18 @@ export function createSoundscape(ctx, values = defaults, seed = Date.now()) {
       });
     },
     setMono(enabled) { isMono = enabled; stereoLevel.gain.setTargetAtTime(enabled ? 0 : 1, ctx.currentTime, .1); monoLevel.gain.setTargetAtTime(enabled ? 1 : 0, ctx.currentTime, .1); wet.gain.setTargetAtTime(enabled ? 0 : settings.space / 100 * .34, ctx.currentTime, .1); },
+    scheduleEnd(seconds) {
+      const time = ctx.currentTime;
+      sessionGate.gain.cancelScheduledValues(time);
+      if (seconds !== null && seconds <= 0) { sessionGate.gain.setValueAtTime(0, time); return; }
+      sessionGate.gain.setValueAtTime(1, time);
+      if (seconds !== null) {
+        const end = time + seconds;
+        sessionGate.gain.setValueAtTime(1, Math.max(time, end - .8));
+        sessionGate.gain.linearRampToValueAtTime(0, end);
+      }
+    },
+    mute() { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setValueAtTime(0, ctx.currentTime); },
     fadeOut(seconds = 1) { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(0, ctx.currentTime, seconds / 4); },
     stop() { sources.forEach(source => { try { source.stop(); } catch {} }); }
   };

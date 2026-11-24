@@ -19,10 +19,11 @@ async function pause(message = 'Take your time') {
   busy = true; $('play').disabled = true;
   engine.fadeOut(.7);
   await new Promise(resolve => setTimeout(resolve, 750));
-  elapsed += (context.currentTime - began); playing = false;
+  elapsed += (context.currentTime - began); if (deadline) elapsed = Math.min(elapsed, deadline); playing = false;
   await context.suspend(); busy = false; $('play').disabled = false; showState(message);
 }
-function setDeadline() { const minutes = Number($('timer').value); deadline = minutes ? elapsed + minutes * 60 : 0; }
+function scheduleTimer() { engine?.scheduleEnd(deadline ? Math.max(0, deadline - elapsed - (playing ? context.currentTime - began : 0)) : null); }
+function setDeadline() { const minutes = Number($('timer').value); deadline = minutes ? elapsed + minutes * 60 : 0; scheduleTimer(); }
 $('play').addEventListener('click', async () => {
   if (busy) return;
   if (playing) { await pause(); return; }
@@ -33,11 +34,15 @@ $('play').addEventListener('click', async () => {
       if (!Audio) throw new Error('This browser does not support Web Audio. Try Chrome, Safari or Firefox.');
       context = new Audio(); await context.resume(); engine = createSoundscape(context, settings);
       context.addEventListener('statechange', () => {
-        if (context.state === 'interrupted' && playing) { elapsed += context.currentTime - began; playing = false; showState('Audio interrupted. Tap to resume.'); }
+        if ((context.state === 'interrupted' || context.state === 'suspended') && playing && !busy) {
+          engine.mute(); elapsed += context.currentTime - began; if (deadline) elapsed = Math.min(elapsed, deadline);
+          playing = false; showState('Audio interrupted. Tap to resume.');
+        }
       });
     } else { await context.resume(); engine.update('volume', settings.volume); }
     engine.setMono($('mono').checked); began = context.currentTime; playing = true;
     if (deadline && elapsed >= deadline) { elapsed = 0; setDeadline(); }
+    scheduleTimer();
     showState($('mono').checked ? 'Listening in mono' : 'Sound in motion');
   } catch (error) {
     playing = false; $('status').textContent = error.message || 'Audio could not start. Please try again.';
@@ -58,7 +63,7 @@ $('reset').addEventListener('click', () => { settings.volume = defaults.volume; 
 $('mono').addEventListener('change', event => { engine?.setMono(event.target.checked); if (playing) showState(event.target.checked ? 'Listening in mono' : 'Sound in motion'); });
 $('timer').addEventListener('change', () => { if (playing) elapsed += context.currentTime - began; if (playing) began = context.currentTime; setDeadline(); });
 setInterval(() => {
-  const total = elapsed + (playing ? context.currentTime - began : 0);
+  let total = elapsed + (playing ? context.currentTime - began : 0); if (deadline) total = Math.min(total, deadline);
   $('elapsed').textContent = `${Math.floor(total / 60).toString().padStart(2,'0')}:${Math.floor(total % 60).toString().padStart(2,'0')}`;
   if (playing && !busy && deadline && total >= deadline) pause('Session complete. A moment well spent.');
 }, 500);
